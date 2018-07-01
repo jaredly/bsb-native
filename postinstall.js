@@ -32,17 +32,22 @@ if (isWin) {
   return;
 }
 
-https.get('https://github.com/bsansouci/bsb-native/releases/download/3.2.0/' + zipFilename, function(res) {
-  if (res.statusCode === 302) {
-    https.get(res.headers.location, function(res) {
-      handleResponse(res);
-    });
-    return;
-  }
-  handleResponse(res);
-}).on("error", (err) => {
-  console.error("Error: " + err.message);
-});
+if (fs.existsSync(zipFilename)) {
+  unzip()
+} else {
+  https.get('https://github.com/bsansouci/bsb-native/releases/download/3.2.0/' + zipFilename, function(res) {
+    if (res.statusCode === 302) {
+      https.get(res.headers.location, function(res) {
+        handleResponse(res);
+      });
+      return;
+    }
+    handleResponse(res);
+  }).on("error", (err) => {
+    console.error("Error: " + err.message);
+  });
+}
+
 var encoding =  'binary';
 
 function handleResponse(res) {
@@ -51,15 +56,25 @@ function handleResponse(res) {
   var len = parseInt(res.headers['content-length'], 10);
   var fileStream = fs.createWriteStream(zipFilename, { encoding });
   var downloaded = 0;
-  
+
   // A chunk of data has been recieved.
   res.on('data', (chunk) => {
     downloaded += chunk.length;
     fileStream.write(chunk);
     process.stdout.write("Downloading " + (100.0 * downloaded / len).toFixed(2) + "% " + (downloaded / 1000) + " kb\r");
   });
-  
+
   fileStream.on('finish', function() {
+    unzip();
+  });
+
+  // The whole response has been received. Print out the result.
+  res.on('end', function() {
+    fileStream.end();
+  });
+}
+
+function unzip() {
     yauzl.open(zipFilename, {lazyEntries: true}, function(err, zipfile) {
       if (err) throw err;
       var i = 0;
@@ -84,7 +99,7 @@ function handleResponse(res) {
                 zipfile.readEntry();
               });
               // Mode roughly translates to unix permissions.
-              // See https://github.com/thejoshwolfe/yauzl/issues/57#issuecomment-301847099          
+              // See https://github.com/thejoshwolfe/yauzl/issues/57#issuecomment-301847099
               var mode = entry.externalFileAttributes >>> 16;
               var writeStream = fs.createWriteStream(entry.fileName, {mode, encoding})
               readStream.pipe(writeStream);
@@ -93,10 +108,4 @@ function handleResponse(res) {
         }
       });
     })
-  });
-
-  // The whole response has been received. Print out the result.
-  res.on('end', function() {
-    fileStream.end();
-  });
 }
